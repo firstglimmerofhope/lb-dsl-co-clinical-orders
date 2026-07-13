@@ -1,0 +1,37 @@
+// Case 1: Standard new-onset T2D with Heart Failure
+patient JohnDoe {
+    a1c   : 7.8
+    fpg   : 8.2
+    egfr  : 85
+    comorbidities : ["HF"]
+}
+
+// Case 2: Advanced CKD — Metformin safety check fires
+patient JaneSmith {
+    a1c   : 8.1
+    fpg   : 9.0
+    egfr  : 25
+    comorbidities : ["CKD"]
+}
+
+// Diagnosis Rules (Forward Chaining — ADA SoC thresholds)
+rule diagnosisA1C {
+    when a1c >= 6.5
+    then diagnosis: T2D
+}
+
+rule diagnosisFPG {
+    when fpg >= 7.0
+    then diagnosis: T2D
+}
+
+// Safety Rules (Diabetes Canada CPG eGFR cutoffs)
+safety metforminContraindication {
+    when egfr < 30
+    then CRITICAL: "Metformin contraindicated — remove from order set"
+}
+
+safety metforminDoseWarning {
+    when egfr < 45
+    then WARNING: "Limit Metformin to max 1000mg/day"
+}

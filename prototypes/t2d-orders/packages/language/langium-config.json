@@ -1,0 +1,14 @@
+{
+  "projectName": "T2DOrders",
+  "languages": [
+    {
+      "id": "t2d-orders",
+      "grammar": "src/t2d-orders.langium",
+      "fileExtensions": ["t2d"],
+      "textMate": {
+        "out": "syntaxes/t2d-orders.tmLanguage.json"
+      }
+    }
+  ],
+  "out": "src/generated"
+}
