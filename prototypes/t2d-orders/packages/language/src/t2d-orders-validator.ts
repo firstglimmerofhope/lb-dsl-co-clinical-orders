@@ -1,95 +1,99 @@
 import type { ValidationAcceptor, ValidationChecks } from 'langium';
 import type {
     T2DOrdersAstType,
-    ClinicalModel,
     PatientData,
-    DiagnosisRule,
-    SafetyRule
+    MedicationOrder,
+    LabOrder,
 } from './generated/ast.js';
 import type { T2DOrdersServices } from './t2d-orders-module.js';
 
-// ADA/Diabetes Canada clinical thresholds (evidence-based constants)
-const ADA_THRESHOLDS = {
-    A1C_T2D: 6.5,       // ADA 2025: A1C ≥ 6.5% → T2D
-    FPG_T2D: 7.0,       // ADA 2025: FPG ≥ 7.0 mmol/L → T2D
-    A1C_PRE_LOW: 5.7,   // ADA: Prediabetes lower bound
-    FPG_PRE_LOW: 5.6,
-    EGFR_CRITICAL: 30,  // Metformin contraindicated below 30
-    EGFR_WARN: 45,      // Metformin dose reduction below 45
+// Local JSON terminology cache — per [PIT-2], no real-time RxNorm/LOINC REST calls
+const KNOWN_T2D_DRUGS = new Set([
+    'Metformin', 'Empagliflozin', 'Dapagliflozin', 'Semaglutide',
+    'Tirzepatide', 'Sitagliptin', 'Linagliptin', 'Glimepiride',
+    'Atorvastatin', 'Rosuvastatin', 'Lisinopril', 'Losartan', 'Glargine', 'Lispro'
+]);
+
+const DOSE_RANGES: Record<string, [number, number]> = {
+    Metformin: [500, 2000],
+    Empagliflozin: [10, 25],
+    Dapagliflozin: [5, 10],
+    Atorvastatin: [10, 80]
 };
 
 export function registerValidationChecks(services: T2DOrdersServices): void {
     const registry = services.validation.ValidationRegistry;
     const validator = services.validation.T2DOrdersValidator;
     const checks: ValidationChecks<T2DOrdersAstType> = {
-        PatientData:    validator.checkPatientMetricRanges,
-        DiagnosisRule:  validator.checkDiagnosisThresholds,
-        SafetyRule:     validator.checkSafetyThresholds,
-        ClinicalModel:  validator.checkModelHasDiagnosisRules,
+        PatientData:    validator.checkPatientRanges,
+        MedicationOrder: validator.checkMedicationOrder,
+        LabOrder: validator.checkLabOrder,
     };
     registry.register(checks, validator);
 }
 
 export class T2DOrdersValidator {
 
-    /** Guard: patient metric values must be physiologically plausible */
-    checkPatientMetricRanges(patient: PatientData, accept: ValidationAcceptor): void {
+    checkMedicationOrder(order: MedicationOrder, accept: ValidationAcceptor): void {
+        // Rule 1: drug must be in local terminology cache (RxNorm-mapped subset)
+        if (!KNOWN_T2D_DRUGS.has(order.drug)) {
+            accept('warning', `Drug "${order.drug}" is not in the local T2D RxNorm cache. Verify spelling or extend the cache.`, {
+                node: order,
+                property: 'drug'
+            });
+        }
+
+        // Rule 2: dose must fall within clinically plausible range
+        const range = DOSE_RANGES[order.drug];
+        if (range && (order.dose < range[0] || order.dose > range[1])) {
+            accept('error', `Dose ${order.dose}${order.unit} for ${order.drug} is outside the clinically valid range [${range[0]}-${range[1]}${order.unit}].`, {
+                node: order,
+                property: 'dose'
+            });
+        }
+
+        // Rule 3: route must be one of the FDA-mapped enum values (already enforced by grammar,
+        // but we double check here in case grammar is relaxed later)  PO = by mouth / oral 
+        // IV = intravenous PR = per rectum SC = subcutaneous
+        const validRoutes = ['PO', 'IV', 'PR', 'SC'];
+        if (!validRoutes.includes(order.route)) {
+            accept('error', `Route "${order.route}" is not a recognized administration route.`, {
+                node: order,
+                property: 'route'
+            });
+        }
+    }
+
+    checkLabOrder(order: LabOrder, accept: ValidationAcceptor): void {
+        // Rule 4: STAT priority requires a documented indication (billing/medical necessity)
+        if (order.priority === 'STAT' && !order.indication) {
+            accept('error', `STAT lab order "${order.test}" requires an "indication" field for medical necessity.`, {
+                node: order,
+                property: 'priority'
+            });
+        }
+    }
+
+    checkPatientRanges(patient: PatientData, accept: ValidationAcceptor): void {
         if (patient.a1c < 3.0 || patient.a1c > 20.0) {
-            accept('error', `A1C value ${patient.a1c}% is outside plausible range (3–20%). Check input.`, {
-                node: patient, property: 'a1c'
+            accept('error', `A1C value ${patient.a1c}% is outside plausible clinical range [3.0-20.0].`, {
+                node: patient,
+                property: 'a1c'
             });
         }
-        if (patient.fpg < 2.0 || patient.fpg > 40.0) {
-            accept('error', `FPG value ${patient.fpg} mmol/L is outside plausible range (2–40). Check input.`, {
-                node: patient, property: 'fpg'
+
+        if (patient.fpg < 3.0 || patient.fpg > 20.0) {
+            accept('error', `FPG value ${patient.fpg}% is outside plausible clinical range [3.0-20.0].`, {
+                node: patient,
+                property: 'fpg'
             });
         }
-        if (patient.egfr < 1 || patient.egfr > 150) {
-            accept('error', `eGFR value ${patient.egfr} is outside plausible range (1–150). Check input.`, {
-                node: patient, property: 'egfr'
+
+        if (patient.egfr < 0 || patient.egfr > 150) {
+            accept('error', `eGFR value ${patient.egfr} is outside plausible clinical range [0-150].`, {
+                node: patient,
+                property: 'egfr'
             });
-        }
-    }
-
-    /** Guard: DSL rule thresholds must match ADA/Diabetes Canada guidelines */
-    checkDiagnosisThresholds(rule: DiagnosisRule, accept: ValidationAcceptor): void {
-        const { field, op, value } = rule.condition;
-        if (field === 'a1c' && rule.result === 'T2D') {
-            if (op === '>=' && Math.abs(value - ADA_THRESHOLDS.A1C_T2D) > 0.05) {
-                accept('warning',
-                    `ADA guideline: A1C T2D threshold should be ≥${ADA_THRESHOLDS.A1C_T2D}%, got ${value}%.`,
-                    { node: rule.condition, property: 'value' });
-            }
-        }
-        if (field === 'fpg' && rule.result === 'T2D') {
-            if (op === '>=' && Math.abs(value - ADA_THRESHOLDS.FPG_T2D) > 0.05) {
-                accept('warning',
-                    `ADA guideline: FPG T2D threshold should be ≥${ADA_THRESHOLDS.FPG_T2D} mmol/L, got ${value}.`,
-                    { node: rule.condition, property: 'value' });
-            }
-        }
-    }
-
-    /** Guard: safety rule eGFR cutoffs must match ADA/Diabetes Canada guidelines */
-    checkSafetyThresholds(rule: SafetyRule, accept: ValidationAcceptor): void {
-        if (rule.level === 'CRITICAL' && rule.threshold !== ADA_THRESHOLDS.EGFR_CRITICAL) {
-            accept('warning',
-                `Expected CRITICAL eGFR cutoff = ${ADA_THRESHOLDS.EGFR_CRITICAL}, got ${rule.threshold}. Verify against Diabetes Canada CPG.`,
-                { node: rule, property: 'threshold' });
-        }
-        if (rule.level === 'WARNING' && rule.threshold !== ADA_THRESHOLDS.EGFR_WARN) {
-            accept('warning',
-                `Expected WARNING eGFR cutoff = ${ADA_THRESHOLDS.EGFR_WARN}, got ${rule.threshold}. Verify against ADA SoC.`,
-                { node: rule, property: 'threshold' });
-        }
-    }
-
-    /** Guard: every model must declare at least one DiagnosisRule */
-    checkModelHasDiagnosisRules(model: ClinicalModel, accept: ValidationAcceptor): void {
-        if (model.rules.length === 0) {
-            accept('warning',
-                'No DiagnosisRule declared. The forward-chaining engine has nothing to fire.',
-                { node: model });
         }
     }
 }

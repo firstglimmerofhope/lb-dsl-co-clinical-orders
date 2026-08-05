@@ -16,22 +16,22 @@ patient JaneSmith {
 
 // Diagnosis Rules (Forward Chaining — ADA SoC thresholds)
 rule diagnosisA1C {
-    when a1c >= 6.5
-    then diagnosis: T2D
+    if a1c >= 6.5
+    then "T2D"
 }
 
 rule diagnosisFPG {
-    when fpg >= 7.0
-    then diagnosis: T2D
+    if fpg >= 7.0
+    then "T2D"
 }
 
 // Safety Rules (Diabetes Canada CPG eGFR cutoffs)
 safety metforminContraindication {
-    when egfr < 30
-    then CRITICAL: "Metformin contraindicated — remove from order set"
+    if egfr < 30
+    then "[CRITICAL]: Metformin contraindicated — remove from order set"
 }
 
 safety metforminDoseWarning {
-    when egfr < 45
-    then WARNING: "Limit Metformin to max 1000mg/day"
+    if egfr < 45
+    then "[WARNING]: Limit Metformin to max 1000mg/day"
 }

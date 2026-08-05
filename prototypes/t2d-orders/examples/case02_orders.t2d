@@ -1,0 +1,38 @@
+patient JaneSmith {
+  a1c:   8.1
+  fpg:   9.0
+  egfr:  25
+  comorbidities: ["CKD"]
+}
+
+rule R1_T2D_A1C {
+  if a1c >= 6.5
+  then "T2D"
+}
+
+safety S1_Metformin_Contraindicated {
+  if egfr < 30
+  then "[CRITICAL] Metformin contraindicated — remove from order set"
+}
+
+medication M1_SGLT2 {
+  drug: "Empagliflozin"
+  dose: 10
+  unit: "mg"
+  route: PO
+  frequency: "Daily"
+  indication: "Cardiorenal protection, CKD"
+}
+
+lab L1_HbA1c_Confirm {
+  test: "Hemoglobin A1c"
+  specimen: "Blood Venous"
+  priority: Routine
+  indication: "E11.9 — confirm T2D diagnosis"
+}
+
+lab L2_BMP_STAT {
+  test: "Basic Metabolic Panel"
+  priority: STAT
+  indication: "Altered mental status, rule out DKA"
+}

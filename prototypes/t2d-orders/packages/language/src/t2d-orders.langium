@@ -2,7 +2,11 @@ grammar T2DOrders
 
 // Entry Rule
 entry ClinicalModel:
-    (patients+=PatientData | rules+=DiagnosisRule | safetyRules+=SafetyRule)*;
+    patients+=PatientData*
+    rules+=DiagnosisRule*
+    safetyRules+=SafetyRule*
+    medications+=MedicationOrder*
+    labs+=LabOrder*;
 
 // Patient Data (raw clinical indicators)
 PatientData:
@@ -16,31 +20,49 @@ PatientData:
 // Diagnosis Rule (forward-chaining: IF metric THEN conclusion)
 DiagnosisRule:
     'rule' name=ID '{'
-        'when' condition=Condition
-        'then' 'diagnosis' ':' result=DiagnosisResult
+        'if' condition=RuleCondition
+        'then' conclusion=STRING
     '}';
-
-Condition:
-    field=MetricField op=CompOp value=NUMBER;
-
-DiagnosisResult returns string:
-    'T2D' | 'Prediabetes' | 'Normal';
-
-MetricField returns string:
-    'a1c' | 'fpg';
-
-CompOp returns string:
-    '>=' | '>' | '<=' | '<';
 
 // Safety Rule (eGFR-based medication constraint)
 SafetyRule:
     'safety' name=ID '{'
-        'when' 'egfr' op=CompOp threshold=NUMBER
-        'then' level=SafetyLevel ':' message=STRING
+        'if' condition=SafetyCondition
+        'then' alertText=STRING
     '}';
 
-SafetyLevel returns string:
-    'CRITICAL' | 'WARNING';
+MedicationOrder:
+    'medication' name=ID '{'
+        'drug'  ':' drug=STRING
+        'dose'  ':' dose=NUMBER
+        'unit'  ':' unit=STRING
+        'route' ':' route=RouteEnum
+        'frequency' ':' frequency=STRING
+        ('indication'   ':' indication=STRING)?
+    '}';
+
+LabOrder:
+    'lab' name=ID '{'
+        'test'  ':' test=STRING
+        ('specimen' ':' specimen=STRING)?
+        'priority'  ':' priority=PriorityEnum
+        ('indication'   ':' indication=STRING)?
+    '}';
+
+RouteEnum returns string:
+    'PO' | 'IV' | 'PR' | 'SC';
+
+PriorityEnum returns string:
+    'STAT' | 'Routine' | 'TimedAM';
+
+RuleCondition:
+    field=('a1c' | 'fpg') op=CompOp threshold=NUMBER;
+
+SafetyCondition:
+    field='egfr' op=CompOp threshold=NUMBER;
+
+CompOp returns string:
+    '>=' | '>' | '<=' | '<';
 
 terminal ID: /[_a-zA-Z][\w_]*/;
 terminal NUMBER returns number: /[0-9]+(\.[0-9]+)?/;

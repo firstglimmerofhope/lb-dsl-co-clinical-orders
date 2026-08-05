@@ -6,10 +6,10 @@ import { CompositeGeneratorNode, NL, toString } from 'langium/generate';
 
 function inferDiagnosis(patient: PatientData, rules: DiagnosisRule[]): string {
     for (const rule of rules) {
-        const { field, op, value } = rule.condition;
+        const { field, op, threshold } = rule.condition;
         const metricValue = field === 'a1c' ? patient.a1c : patient.fpg;
-        const fired = evalOp(metricValue, op, value);
-        if (fired) return rule.result;
+        const fired = evalOp(metricValue, op, threshold);
+        if (fired) return rule.conclusion;
     }
     return 'Normal';
 }
@@ -45,10 +45,11 @@ function applySafety(patient: PatientData, meds: string[], safetyRules: SafetyRu
     const alerts: string[] = [];
     let safeMeds = [...meds];
     for (const rule of safetyRules) {
-        const fired = evalOp(patient.egfr, rule.op, rule.threshold);
+        const { op, threshold } = rule.condition;
+        const fired = evalOp(patient.egfr, op, threshold);
         if (fired) {
-            alerts.push(`[${rule.level}] eGFR ${patient.egfr}: ${rule.message}`);
-            if (rule.level === 'CRITICAL') {
+            alerts.push(` eGFR ${patient.egfr}: ${rule.alertText}`);
+            if (rule.alertText.includes('CRITICAL')) {
                 safeMeds = safeMeds.filter(m => !m.includes('Metformin'));
                 safeMeds.push('Alternative non-renal-cleared therapy required');
             }
@@ -86,5 +87,33 @@ export function generateReport(model: ClinicalModel, filePath: string, destinati
         fileNode.append(NL);
     }
 
+    if (model.medications.length > 0) {
+        fileNode.append('── Structured Medication Orders ──', NL);
+        for (const med of model.medications) {
+            fileNode.append(`    • ${med.drug} ${med.dose}${med.unit} ${med.route} ${med.frequency}`);
+            if (med.indication) {
+                fileNode.append(` — for ${med.indication}`, NL);
+            } else {
+                fileNode.append(NL);
+            }
+        }
+    }
+
+    if (model.labs.length > 0) {
+        fileNode.append('── Structured Lab Orders ──', NL);
+        for (const lab of model.labs) {
+            fileNode.append(`    • ${lab.test} [${lab.priority}]`);
+            if (lab.specimen) {
+                fileNode.append(` (${lab.specimen})`);
+            } else {
+                fileNode.append();
+            }
+            if (lab.indication) {
+                fileNode.append(` — ${lab.indication}`, NL);
+            } else {
+                fileNode.append(NL);
+            }
+        }
+    }
     return toString(fileNode);
 }
