@@ -1,0 +1,1 @@
+Patient JaneSmith has T2D with CKD and eGFR 25. Order a STAT basic metabolic panel to rule out DKA due to altered mental status.

@@ -5,10 +5,14 @@
             "path": "./packages/language/tsconfig.src.json"
         },
         {
+            "path": "./packages/vgcl/tsconfig.json"
+        },
+        {
             "path": "./packages/cli/tsconfig.json"
         },
         {
             "path": "./packages/extension/tsconfig.json"
-        }
+        },
+
     ]
 }

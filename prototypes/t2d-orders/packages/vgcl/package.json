@@ -1,0 +1,16 @@
+{
+  "name": "vgcl",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "out/index.js",
+  "types": "out/index.d.ts",
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "langium": "~4.2.0"
+  },
+  "devDependencies": {
+    "typescript": "~5.8.3"
+  }
+}
